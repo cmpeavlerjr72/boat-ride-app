@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx expo start:*)",
+      "Bash(npx expo export:*)",
+      "Bash(curl:*)",
+      "Bash(python -c:*)",
+      "Bash(netstat:*)",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 8000 -State Listen | Select-Object OwningProcess\")",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}
