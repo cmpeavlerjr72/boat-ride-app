@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import { StyleSheet, View, Text, TouchableOpacity } from "react-native";
 import MapView, { Marker, Polyline, MapPressEvent, Region } from "react-native-maps";
-import { LatLon, ScoreOut, SCORE_COLORS } from "../types";
+import { LatLon, ScoreOut, Report, REPORT_COLORS } from "../types";
 
 interface Props {
   points: LatLon[];
@@ -9,6 +9,11 @@ interface Props {
   onAddPoint: (point: LatLon) => void;
   onClearRoute: () => void;
   onUndoPoint: () => void;
+  reports?: Report[];
+  onReportPress?: (report: Report) => void;
+  initialRegion?: Region;
+  showsUserLocation?: boolean;
+  highlightedScoreIndex?: number | null;
 }
 
 const INITIAL_REGION: Region = {
@@ -24,25 +29,44 @@ export default function RouteMap({
   onAddPoint,
   onClearRoute,
   onUndoPoint,
+  reports = [],
+  onReportPress,
+  initialRegion,
+  showsUserLocation,
+  highlightedScoreIndex,
 }: Props) {
+  const mapRef = useRef<MapView>(null);
+  const hasAnimated = useRef(false);
+
+  // Animate to initialRegion when it arrives after mount (e.g. from profile or GPS)
+  useEffect(() => {
+    if (initialRegion && !hasAnimated.current && points.length === 0) {
+      hasAnimated.current = true;
+      mapRef.current?.animateToRegion(initialRegion, 500);
+    }
+  }, [initialRegion]);
+
   const handlePress = (e: MapPressEvent) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;
     onAddPoint({ lat: latitude, lon: longitude });
   };
 
-  // Build score-colored polyline segments
   const scoreSegments = buildScoreSegments(points, scores);
 
   return (
     <View style={styles.container}>
       <MapView
+        ref={mapRef}
         style={styles.map}
-        initialRegion={INITIAL_REGION}
+        initialRegion={initialRegion ?? INITIAL_REGION}
         onPress={handlePress}
         mapType="hybrid"
+        toolbarEnabled={false}
+        showsUserLocation={showsUserLocation}
+        showsMyLocationButton={showsUserLocation}
       >
-        {/* Route waypoint markers */}
-        {points.map((p, i) => (
+        {/* Route waypoint markers (hidden after scoring — route line is enough) */}
+        {scores.length === 0 && points.map((p, i) => (
           <Marker
             key={`wp-${i}`}
             coordinate={{ latitude: p.lat, longitude: p.lon }}
@@ -74,22 +98,45 @@ export default function RouteMap({
           />
         ))}
 
-        {/* Score point markers */}
-        {scores.map((s, i) => (
+        {/* Score point markers — small dots, highlighted when selected */}
+        {scores.map((s, i) => {
+          const isActive = i === highlightedScoreIndex;
+          return (
+            <Marker
+              key={`score-${i}`}
+              coordinate={{ latitude: s.lat, longitude: s.lon }}
+              anchor={{ x: 0.5, y: 0.5 }}
+              zIndex={isActive ? 10 : 1}
+            >
+              <View
+                style={[
+                  isActive ? styles.scoreDotActive : styles.scoreDot,
+                  { backgroundColor: scoreToColor(s.score_0_100) },
+                ]}
+              >
+                <Text style={isActive ? styles.scoreDotTextActive : styles.scoreDotText}>
+                  {Math.round(s.score_0_100)}
+                </Text>
+              </View>
+            </Marker>
+          );
+        })}
+
+        {/* Report markers */}
+        {reports.map((r) => (
           <Marker
-            key={`score-${i}`}
-            coordinate={{ latitude: s.lat, longitude: s.lon }}
+            key={`report-${r.id}`}
+            coordinate={{ latitude: r.lat, longitude: r.lon }}
             anchor={{ x: 0.5, y: 0.5 }}
+            onPress={() => onReportPress?.(r)}
           >
             <View
               style={[
-                styles.scoreDot,
-                { backgroundColor: SCORE_COLORS[s.label] },
+                styles.reportDot,
+                { backgroundColor: REPORT_COLORS[r.report_type] },
               ]}
             >
-              <Text style={styles.scoreDotText}>
-                {Math.round(s.score_0_100)}
-              </Text>
+              <Text style={styles.reportDotText}>!</Text>
             </View>
           </Marker>
         ))}
@@ -97,7 +144,7 @@ export default function RouteMap({
 
       {/* Map controls overlay */}
       {points.length > 0 && (
-        <View style={styles.controls}>
+        <View style={styles.controls} pointerEvents="box-none">
           <TouchableOpacity style={styles.btn} onPress={onUndoPoint}>
             <Text style={styles.btnText}>Undo</Text>
           </TouchableOpacity>
@@ -110,7 +157,7 @@ export default function RouteMap({
         </View>
       )}
 
-      <View style={styles.hint}>
+      <View style={styles.hint} pointerEvents="none">
         <Text style={styles.hintText}>
           {points.length === 0
             ? "Tap the map to add route points"
@@ -121,17 +168,23 @@ export default function RouteMap({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+/** Map score 0-100 to a continuous color: red → orange → yellow → green */
+function scoreToColor(score: number): string {
+  const s = Math.max(0, Math.min(100, score));
+  // Hue: 0 (red) at score 0 → 120 (green) at score 100
+  const hue = (s / 100) * 120;
+  return `hsl(${hue}, 85%, 48%)`;
+}
 
 interface Segment {
   coords: { latitude: number; longitude: number }[];
   color: string;
 }
 
+const GRADIENT_STEPS = 8;
+
 function buildScoreSegments(
-  points: LatLon[],
+  _points: LatLon[],
   scores: ScoreOut[]
 ): Segment[] {
   if (scores.length < 2) return [];
@@ -140,13 +193,26 @@ function buildScoreSegments(
   for (let i = 0; i < scores.length - 1; i++) {
     const a = scores[i];
     const b = scores[i + 1];
-    segments.push({
-      coords: [
-        { latitude: a.lat, longitude: a.lon },
-        { latitude: b.lat, longitude: b.lon },
-      ],
-      color: SCORE_COLORS[a.label],
-    });
+    // Split each segment into sub-segments with interpolated colors
+    for (let step = 0; step < GRADIENT_STEPS; step++) {
+      const t0 = step / GRADIENT_STEPS;
+      const t1 = (step + 1) / GRADIENT_STEPS;
+      const tMid = (t0 + t1) / 2;
+      const scoreMid = a.score_0_100 + (b.score_0_100 - a.score_0_100) * tMid;
+      segments.push({
+        coords: [
+          {
+            latitude: a.lat + (b.lat - a.lat) * t0,
+            longitude: a.lon + (b.lon - a.lon) * t0,
+          },
+          {
+            latitude: a.lat + (b.lat - a.lat) * t1,
+            longitude: a.lon + (b.lon - a.lon) * t1,
+          },
+        ],
+        color: scoreToColor(scoreMid),
+      });
+    }
   }
   return segments;
 }
@@ -156,7 +222,7 @@ const styles = StyleSheet.create({
   map: { flex: 1 },
   controls: {
     position: "absolute",
-    top: 60,
+    top: 12,
     right: 12,
     gap: 8,
   },
@@ -179,13 +245,38 @@ const styles = StyleSheet.create({
   },
   hintText: { color: "#fff", fontSize: 13 },
   scoreDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.7)",
+  },
+  scoreDotText: { color: "#fff", fontSize: 8, fontWeight: "700" },
+  scoreDotActive: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "#fff",
+    shadowColor: "#fff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  scoreDotTextActive: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  reportDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
     borderColor: "#fff",
   },
-  scoreDotText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  reportDotText: { color: "#fff", fontSize: 12, fontWeight: "700" },
 });

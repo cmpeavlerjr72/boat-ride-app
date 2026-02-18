@@ -1,7 +1,14 @@
 import React, { useEffect, useRef } from "react";
 import { StyleSheet, View, Text, TouchableOpacity } from "react-native";
 import L from "leaflet";
-import { LatLon, ScoreOut, SCORE_COLORS } from "../types";
+import { LatLon, ScoreOut, Report, REPORT_COLORS } from "../types";
+
+/** Map score 0-100 to a continuous color: red → orange → yellow → green */
+function scoreToColor(score: number): string {
+  const s = Math.max(0, Math.min(100, score));
+  const hue = (s / 100) * 120;
+  return `hsl(${hue}, 85%, 48%)`;
+}
 
 // Inject Leaflet CSS once
 const LEAFLET_CSS_ID = "leaflet-css";
@@ -19,6 +26,11 @@ interface Props {
   onAddPoint: (point: LatLon) => void;
   onClearRoute: () => void;
   onUndoPoint: () => void;
+  reports?: Report[];
+  onReportPress?: (report: Report) => void;
+  initialRegion?: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
+  showsUserLocation?: boolean;
+  highlightedScoreIndex?: number | null;
 }
 
 const INITIAL_CENTER: [number, number] = [30.37, -88.8];
@@ -30,17 +42,27 @@ export default function RouteMap({
   onAddPoint,
   onClearRoute,
   onUndoPoint,
+  reports = [],
+  initialRegion,
+  showsUserLocation,
+  highlightedScoreIndex,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
+  const userMarkerRef = useRef<L.CircleMarker | null>(null);
+  const hasSetViewRef = useRef(false);
 
   // Initialize map once
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
+    const center: [number, number] = initialRegion
+      ? [initialRegion.latitude, initialRegion.longitude]
+      : INITIAL_CENTER;
+
     const map = L.map(containerRef.current, {
-      center: INITIAL_CENTER,
+      center,
       zoom: INITIAL_ZOOM,
     });
 
@@ -58,6 +80,52 @@ export default function RouteMap({
     };
   }, []);
 
+  // Re-center map when initialRegion arrives (once, before user has placed points)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !initialRegion || hasSetViewRef.current) return;
+    if (points.length === 0) {
+      map.setView([initialRegion.latitude, initialRegion.longitude], INITIAL_ZOOM);
+      hasSetViewRef.current = true;
+    }
+  }, [initialRegion]);
+
+  // Show user location as a blue dot on web via browser geolocation
+  useEffect(() => {
+    if (!showsUserLocation || typeof navigator === "undefined" || !navigator.geolocation) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        if (userMarkerRef.current) {
+          userMarkerRef.current.setLatLng([latitude, longitude]);
+        } else {
+          userMarkerRef.current = L.circleMarker([latitude, longitude], {
+            radius: 8,
+            fillColor: "#4285F4",
+            color: "#fff",
+            weight: 3,
+            fillOpacity: 1,
+          })
+            .bindTooltip("You are here")
+            .addTo(map);
+        }
+      },
+      () => {},
+      { enableHighAccuracy: true }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      if (userMarkerRef.current) {
+        userMarkerRef.current.remove();
+        userMarkerRef.current = null;
+      }
+    };
+  }, [showsUserLocation]);
+
   // Handle map clicks
   useEffect(() => {
     const map = mapRef.current;
@@ -72,7 +140,7 @@ export default function RouteMap({
     };
   }, [onAddPoint]);
 
-  // Redraw markers and lines when points/scores change
+  // Redraw markers and lines when points/scores/reports change
   useEffect(() => {
     const layer = layerRef.current;
     if (!layer) return;
@@ -86,53 +154,88 @@ export default function RouteMap({
       ).addTo(layer);
     }
 
-    // Score-colored segments
+    // Score-colored gradient segments
     if (scores.length >= 2) {
+      const STEPS = 8;
       for (let i = 0; i < scores.length - 1; i++) {
         const a = scores[i];
         const b = scores[i + 1];
-        L.polyline(
-          [
-            [a.lat, a.lon],
-            [b.lat, b.lon],
-          ],
-          { color: SCORE_COLORS[a.label], weight: 4 }
-        ).addTo(layer);
+        for (let step = 0; step < STEPS; step++) {
+          const t0 = step / STEPS;
+          const t1 = (step + 1) / STEPS;
+          const tMid = (t0 + t1) / 2;
+          const scoreMid = a.score_0_100 + (b.score_0_100 - a.score_0_100) * tMid;
+          L.polyline(
+            [
+              [a.lat + (b.lat - a.lat) * t0, a.lon + (b.lon - a.lon) * t0],
+              [a.lat + (b.lat - a.lat) * t1, a.lon + (b.lon - a.lon) * t1],
+            ],
+            { color: scoreToColor(scoreMid), weight: 4 }
+          ).addTo(layer);
+        }
       }
     }
 
-    // Waypoint markers
-    points.forEach((p, i) => {
-      const color =
-        i === 0 ? "#22c55e" : i === points.length - 1 ? "#ef4444" : "#3b82f6";
-      L.circleMarker([p.lat, p.lon], {
-        radius: 7,
-        fillColor: color,
-        color: "#fff",
-        weight: 2,
-        fillOpacity: 1,
-      })
-        .bindTooltip(`Point ${i + 1}: ${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`)
-        .addTo(layer);
-    });
+    // Waypoint markers (hidden after scoring — route line is enough)
+    if (scores.length === 0) {
+      points.forEach((p, i) => {
+        const color =
+          i === 0 ? "#22c55e" : i === points.length - 1 ? "#ef4444" : "#3b82f6";
+        L.circleMarker([p.lat, p.lon], {
+          radius: 7,
+          fillColor: color,
+          color: "#fff",
+          weight: 2,
+          fillOpacity: 1,
+        })
+          .bindTooltip(`Point ${i + 1}: ${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`)
+          .addTo(layer);
+      });
+    }
 
-    // Score dot markers
-    scores.forEach((s) => {
-      const bg = SCORE_COLORS[s.label];
+    // Score point markers — small dots, highlighted when selected
+    scores.forEach((s, i) => {
+      const bg = scoreToColor(s.score_0_100);
+      const isActive = i === highlightedScoreIndex;
+      const size = isActive ? 32 : 20;
+      const half = size / 2;
+      const border = isActive ? "3px solid #fff" : "1.5px solid rgba(255,255,255,0.7)";
+      const fontSize = isActive ? 12 : 8;
+      const shadow = isActive ? "box-shadow:0 0 8px rgba(255,255,255,0.6);" : "";
       const icon = L.divIcon({
         className: "",
         html: `<div style="
-          width:28px;height:28px;border-radius:14px;
+          width:${size}px;height:${size}px;border-radius:${half}px;
+          background:${bg};border:${border};
+          display:flex;align-items:center;justify-content:center;
+          color:#fff;font-size:${fontSize}px;font-weight:700;
+          ${shadow}
+        ">${Math.round(s.score_0_100)}</div>`,
+        iconSize: [size, size],
+        iconAnchor: [half, half],
+      });
+      L.marker([s.lat, s.lon], { icon, zIndexOffset: isActive ? 1000 : 0 }).addTo(layer);
+    });
+
+    // Report markers
+    reports.forEach((r) => {
+      const bg = REPORT_COLORS[r.report_type];
+      const icon = L.divIcon({
+        className: "",
+        html: `<div style="
+          width:24px;height:24px;border-radius:12px;
           background:${bg};border:2px solid #fff;
           display:flex;align-items:center;justify-content:center;
-          color:#fff;font-size:10px;font-weight:700;
-        ">${Math.round(s.score_0_100)}</div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
+          color:#fff;font-size:12px;font-weight:700;
+        ">!</div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
       });
-      L.marker([s.lat, s.lon], { icon }).addTo(layer);
+      L.marker([r.lat, r.lon], { icon })
+        .bindTooltip(`${r.report_type.replace("_", " ")}`)
+        .addTo(layer);
     });
-  }, [points, scores]);
+  }, [points, scores, reports, highlightedScoreIndex]);
 
   return (
     <View style={styles.container}>

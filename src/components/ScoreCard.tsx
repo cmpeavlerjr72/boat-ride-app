@@ -6,7 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
 } from "react-native";
-import { ScoreOut, SCORE_COLORS } from "../types";
+import { ScoreOut } from "../types";
+
+function scoreToColor(score: number): string {
+  const s = Math.max(0, Math.min(100, score));
+  const hue = (s / 100) * 120;
+  return `hsl(${hue}, 85%, 48%)`;
+}
 
 interface Props {
   scores: ScoreOut[];
@@ -65,7 +71,7 @@ export default function ScoreCard({
               style={[
                 styles.timeChip,
                 {
-                  backgroundColor: SCORE_COLORS[s.label],
+                  backgroundColor: scoreToColor(s.score_0_100),
                   borderColor: i === selectedIndex ? "#fff" : "transparent",
                 },
               ]}
@@ -129,11 +135,28 @@ function DetailItem({ label, value }: { label: string; value: string }) {
   );
 }
 
+const KT_TO_MPH = 1.15078;
+const COMPASS_DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+// Arrows point in the direction wind blows TOWARD (opposite of FROM)
+const WIND_ARROWS = ["↓", "↙", "←", "↖", "↑", "↗", "→", "↘"];
+
+function degToCompass(deg: number): string {
+  return COMPASS_DIRS[Math.round(deg / 45) % 8];
+}
+
+function degToArrow(deg: number): string {
+  return WIND_ARROWS[Math.round(deg / 45) % 8];
+}
+
 function fmtWind(s: ScoreOut): string {
   const w = s.detail.wind_kt;
   if (w == null) return "—";
+  const mph = (w * KT_TO_MPH).toFixed(0);
   const dir = s.detail.wind_dir_deg;
-  return dir != null ? `${w.toFixed(0)} kt @ ${dir.toFixed(0)}°` : `${w.toFixed(0)} kt`;
+  if (dir != null) {
+    return `${mph} mph ${degToArrow(dir)} ${degToCompass(dir)}`;
+  }
+  return `${mph} mph`;
 }
 
 function fmtWaves(s: ScoreOut): string {
@@ -158,7 +181,7 @@ function fmtPrecip(s: ScoreOut): string {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#1a1a2e",
+    backgroundColor: "#161b22",
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingTop: 10,
@@ -172,13 +195,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   summaryItem: { marginRight: 20 },
-  summaryLabel: { color: "#888", fontSize: 11 },
-  summaryValue: { color: "#fff", fontSize: 20, fontWeight: "700" },
+  summaryLabel: { color: "#8b949e", fontSize: 11 },
+  summaryValue: { color: "#f0f6fc", fontSize: 20, fontWeight: "700" },
   dismissBtn: {
     marginLeft: "auto",
     padding: 8,
   },
-  dismissText: { color: "#888", fontSize: 16, fontWeight: "600" },
+  dismissText: { color: "#8b949e", fontSize: 16, fontWeight: "600" },
   timeline: {
     flexDirection: "row",
     paddingHorizontal: 12,
@@ -196,22 +219,22 @@ const styles = StyleSheet.create({
   chipScore: { color: "#fff", fontSize: 14, fontWeight: "700" },
   chipTime: { color: "rgba(255,255,255,0.8)", fontSize: 10 },
   detail: { paddingHorizontal: 16, paddingTop: 4 },
-  detailTitle: { color: "#fff", fontSize: 14, fontWeight: "600", marginBottom: 6 },
+  detailTitle: { color: "#f0f6fc", fontSize: 14, fontWeight: "600", marginBottom: 6 },
   detailGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 4,
   },
   detailItem: {
-    backgroundColor: "#16213e",
+    backgroundColor: "#21262d",
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 5,
     marginRight: 4,
     marginBottom: 4,
   },
-  detailLabel: { color: "#888", fontSize: 10 },
-  detailValue: { color: "#fff", fontSize: 13, fontWeight: "500" },
+  detailLabel: { color: "#8b949e", fontSize: 10 },
+  detailValue: { color: "#f0f6fc", fontSize: 13, fontWeight: "500" },
   reasons: { marginTop: 6 },
-  reasonText: { color: "#f59e0b", fontSize: 12, marginBottom: 2 },
+  reasonText: { color: "#d29922", fontSize: 12, marginBottom: 2 },
 });

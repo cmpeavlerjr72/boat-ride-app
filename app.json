@@ -1,19 +1,30 @@
 {
   "expo": {
-    "name": "boat-ride-app",
-    "slug": "boat-ride-app",
+    "name": "SmoothSailor",
+    "slug": "smooth-sailor",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SmoothSailor uses your location to center the map and tag reports at your current position."
+        }
+      ]
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SmoothSailor uses your location to center the map and tag reports at your current position."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +32,14 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.cmpeavlerjr72.boatrideapp",
+      "config": {
+        "googleMaps": {
+          "apiKey": "***REDACTED***"
+        }
+      },
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
     },
     "web": {
       "favicon": "./assets/favicon.png"

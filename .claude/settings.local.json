@@ -8,7 +8,11 @@
       "Bash(python -c:*)",
       "Bash(netstat:*)",
       "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 8000 -State Listen | Select-Object OwningProcess\")",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npx expo install:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npx expo prebuild:*)",
+      "Bash(npm ls:*)"
     ]
   }
 }
