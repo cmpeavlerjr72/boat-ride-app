@@ -1,0 +1,51 @@
+import { ExpoConfig, ConfigContext } from "expo/config";
+
+export default ({ config }: ConfigContext): ExpoConfig => ({
+  ...config,
+  name: "SmoothSailor",
+  slug: "smooth-sailor",
+  version: "1.0.0",
+  orientation: "portrait",
+  icon: "./assets/icon.png",
+  userInterfaceStyle: "light",
+  newArchEnabled: false,
+  splash: {
+    image: "./assets/splash-icon.png",
+    resizeMode: "contain",
+    backgroundColor: "#ffffff",
+  },
+  plugins: [
+    [
+      "expo-location",
+      {
+        locationWhenInUsePermission:
+          "SmoothSailor uses your location to center the map and tag reports at your current position.",
+      },
+    ],
+  ],
+  ios: {
+    supportsTablet: true,
+    infoPlist: {
+      NSLocationWhenInUseUsageDescription:
+        "SmoothSailor uses your location to center the map and tag reports at your current position.",
+    },
+  },
+  android: {
+    adaptiveIcon: {
+      foregroundImage: "./assets/adaptive-icon.png",
+      backgroundColor: "#ffffff",
+    },
+    edgeToEdgeEnabled: true,
+    predictiveBackGestureEnabled: false,
+    package: "com.cmpeavlerjr72.boatrideapp",
+    config: {
+      googleMaps: {
+        apiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
+      },
+    },
+    permissions: ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+  },
+  web: {
+    favicon: "./assets/favicon.png",
+  },
+});
