@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
-import { getProfile, updateProfile } from "../api/client";
+import { getProfile, updateProfile, deleteAccount } from "../api/client";
 import {
   ExperienceLevel,
   UnitSystem,
@@ -40,6 +40,7 @@ export default function ProfileScreen() {
   const [units, setUnits] = useState<UnitSystem>("imperial");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
 
   useFocusEffect(
@@ -108,6 +109,42 @@ export default function ProfileScreen() {
       await signOut();
     } catch (e: any) {
       console.warn("Sign out failed:", e.message);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    const doDelete = async () => {
+      setDeleting(true);
+      try {
+        await deleteAccount();
+        await signOut();
+      } catch (e: any) {
+        showAlert(
+          "Delete Failed",
+          e.message ?? "Something went wrong. Please try again."
+        );
+      } finally {
+        setDeleting(false);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (
+        window.confirm(
+          "Are you sure you want to delete your account? This action is permanent and cannot be undone. All your data (profile, boats, routes, and reports) will be removed."
+        )
+      ) {
+        doDelete();
+      }
+    } else {
+      Alert.alert(
+        "Delete Account",
+        "Are you sure you want to delete your account? This action is permanent and cannot be undone. All your data (profile, boats, routes, and reports) will be removed.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: doDelete },
+        ]
+      );
     }
   };
 
@@ -226,6 +263,18 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.deleteBtn, deleting && styles.saveBtnDisabled]}
+          onPress={handleDeleteAccount}
+          disabled={deleting}
+        >
+          {deleting ? (
+            <ActivityIndicator color="#f85149" />
+          ) : (
+            <Text style={styles.deleteText}>Delete Account</Text>
+          )}
+        </TouchableOpacity>
       </ScrollView>
 
       <HomeLocationPicker
@@ -309,6 +358,16 @@ const styles = StyleSheet.create({
     borderColor: "rgba(248,81,73,0.4)",
   },
   signOutText: { color: "#f85149", fontSize: 16, fontWeight: "600" },
+  deleteBtn: {
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: "center",
+    backgroundColor: "rgba(248,81,73,0.15)",
+    borderWidth: 1,
+    borderColor: "#f85149",
+  },
+  deleteText: { color: "#f85149", fontSize: 16, fontWeight: "700" },
   locationBtn: {
     flexDirection: "row",
     alignItems: "center",

@@ -81,6 +81,10 @@ export async function updateProfile(
   return res.json();
 }
 
+export async function deleteAccount(): Promise<void> {
+  await authFetch("/profiles/account/me", { method: "DELETE" });
+}
+
 // --- Boats ---
 
 export async function getBoatPresets(): Promise<Boat[]> {
